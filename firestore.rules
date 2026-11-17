@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Chi conosce il codice del viaggio (nel link di invito) può leggere e modificare quel viaggio.
+    // Il codice è lungo e casuale: non condividete il link fuori dal gruppo.
+    match /trips/{tripId} {
+      allow get, write: if tripId.size() >= 16;
+      match /{document=**} {
+        allow read, write: if tripId.size() >= 16;
+      }
+    }
+    // Nessuno può elencare tutti i viaggi.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
