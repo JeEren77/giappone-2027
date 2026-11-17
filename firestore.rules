@@ -1,15 +1,52 @@
 rules_version = '2';
+// Regole di sicurezza: solo chi ha fatto l'accesso con Google ED è membro del viaggio
+// può leggere o modificare i dati (chiave Gemini compresa).
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Chi conosce il codice del viaggio (nel link di invito) può leggere e modificare quel viaggio.
-    // Il codice è lungo e casuale: non condividete il link fuori dal gruppo.
-    match /trips/{tripId} {
-      allow get, write: if tripId.size() >= 16;
-      match /{document=**} {
-        allow read, write: if tripId.size() >= 16;
+
+    function signedIn() { return request.auth != null; }
+    function tripData(t) { return get(/databases/$(database)/documents/trips/$(t)).data; }
+    function isMember(t) { return signedIn() && request.auth.uid in tripData(t).memberUids; }
+
+    match /trips/{t} {
+      // Chi crea il viaggio diventa il primo membro.
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.memberUids == [request.auth.uid];
+      allow read: if signedIn() && request.auth.uid in resource.data.memberUids;
+      // I membri possono modificare il viaggio (date, nome, chiave Gemini).
+      allow update: if signedIn() && request.auth.uid in resource.data.memberUids
+        && request.resource.data.ownerUid == resource.data.ownerUid;
+      // Chi ha un codice di invito valido può aggiungere SOLO se stesso ai membri.
+      allow update: if signedIn()
+        && !(request.auth.uid in resource.data.memberUids)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'joinWith'])
+        && request.resource.data.memberUids.hasAll(resource.data.memberUids)
+        && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1
+        && request.auth.uid in request.resource.data.memberUids
+        && exists(/databases/$(database)/documents/trips/$(t)/invites/$(request.resource.data.joinWith));
+      allow delete: if signedIn() && request.auth.uid == resource.data.ownerUid;
+
+      // Codici di invito: si possono leggere solo conoscendone il nome esatto.
+      match /invites/{code} {
+        allow get: if signedIn();
+        allow list: if false;
+        allow create, delete: if isMember(t);
+      }
+
+      // Profili: ognuno modifica il proprio; le persone senza app ("g-...") le gestisce il gruppo.
+      match /people/{pid} {
+        allow read: if isMember(t);
+        allow write: if isMember(t) && (pid == request.auth.uid || pid.matches('g-.*'));
+      }
+
+      // Tutto il resto (giorni, attività, prenotazioni, spese, voti, cose da fare).
+      match /{col}/{doc} {
+        allow read: if isMember(t) && col != 'invites';
+        allow write: if isMember(t) && !(col in ['invites', 'people']);
       }
     }
-    // Nessuno può elencare tutti i viaggi.
+
     match /{document=**} {
       allow read, write: if false;
     }

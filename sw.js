@@ -1,5 +1,5 @@
 // Service worker: l'app si apre anche senza rete.
-const VERSION = "giappone-v1";
+const VERSION = "giappone-v2";
 const SHELL = ["./", "index.html", "app.js", "seed.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -13,8 +13,9 @@ self.addEventListener("fetch", e => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   // Dati in diretta (meteo, cambio, Gemini, Firestore): sempre dalla rete, l'app tiene la sua copia.
-  if (/open-meteo|frankfurter|generativelanguage|firestore|googleapis\.com\/google\.firestore/.test(url.host + url.pathname)) return;
-  const cacheable = url.origin === location.origin || /gstatic\.com|fonts\.googleapis\.com/.test(url.host);
+  if (/open-meteo|frankfurter|generativelanguage|firestore|identitytoolkit|securetoken|nominatim|firebaseapp|__\/auth/.test(url.host + url.pathname)) return;
+  const tiles = /basemaps\.cartocdn\.com/.test(url.host);
+  const cacheable = url.origin === location.origin || tiles || /gstatic\.com|unpkg\.com/.test(url.host);
   if (!cacheable) return;
   // Prima la copia salvata, poi aggiorna in background.
   e.respondWith(caches.open(VERSION).then(async cache => {
